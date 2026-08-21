@@ -1,8 +1,11 @@
-﻿const fs = require("fs");
+const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
 
-const DB_FILE = path.join(__dirname, "bizflow_data.json");
+// In serverless environments (e.g. Vercel), /tmp is the writable directory
+const DB_FILE = process.env.VERCEL
+  ? path.join("/tmp", "bizflow_data.json")
+  : path.join(__dirname, "bizflow_data.json");
 
 function getDefaultData() {
   const hashAdmin = bcrypt.hashSync("admin123", 10);
@@ -84,9 +87,20 @@ class BizflowDB {
         const raw = fs.readFileSync(DB_FILE, "utf-8");
         return JSON.parse(raw);
       } catch (e) {
-        console.error("Error reading db file, regenerating defaults:", e);
+        console.error("Error reading db file, using defaults:", e);
       }
     }
+    // Also check local bundled data if on serverless
+    const bundledPath = path.join(__dirname, "bizflow_data.json");
+    if (fs.existsSync(bundledPath)) {
+      try {
+        const raw = fs.readFileSync(bundledPath, "utf-8");
+        const parsed = JSON.parse(raw);
+        this.saveData(parsed);
+        return parsed;
+      } catch (e) {}
+    }
+
     const def = getDefaultData();
     this.saveData(def);
     return def;
@@ -97,7 +111,11 @@ class BizflowDB {
   }
 
   saveData(d) {
-    fs.writeFileSync(DB_FILE, JSON.stringify(d, null, 2), "utf-8");
+    try {
+      fs.writeFileSync(DB_FILE, JSON.stringify(d, null, 2), "utf-8");
+    } catch (e) {
+      console.warn("Notice: File save ignored in read-only environment, keeping in memory.");
+    }
   }
 
   nextId(table) {
@@ -108,5 +126,5 @@ class BizflowDB {
 }
 
 const db = new BizflowDB();
-console.log("✅ BizFlow JSON Database loaded & ready");
+console.log("✅ BizFlow Database loaded & ready");
 module.exports = db;
