@@ -9,7 +9,13 @@ import {
   Globe,
   Receipt,
   Percent,
-  CheckCircle
+  Upload,
+  Link,
+  Image as ImageIcon,
+  Trash2,
+  Sparkles,
+  CheckCircle,
+  Eye
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -17,6 +23,7 @@ export default function Settings() {
   const { user } = useAuth();
   const [form, setForm] = useState({
     company_name: "",
+    logo_url: "",
     email: "",
     phone: "",
     address: "",
@@ -31,6 +38,7 @@ export default function Settings() {
   });
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
+  const [uploadMode, setUploadMode] = useState("url"); // "url" | "upload"
 
   useEffect(() => {
     axios
@@ -42,12 +50,27 @@ export default function Settings() {
       .finally(() => setFetching(false));
   }, []);
 
+  const handleFileUpload = e => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Logo file size must be under 2MB");
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = ev => {
+      setForm(prev => ({ ...prev, logo_url: ev.target.result }));
+      toast.success("Logo loaded from file!");
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSave = async e => {
     e.preventDefault();
     setLoading(true);
     try {
       const { data } = await axios.put("/api/settings", form);
-      toast.success(data.message || "Settings updated successfully!");
+      toast.success(data.message || "Company settings & logo saved successfully!");
     } catch (err) {
       toast.error(err.response?.data?.error || "Failed to save settings");
     } finally {
@@ -64,7 +87,7 @@ export default function Settings() {
   }
 
   const CURRENCIES = [
-    { symbol: "$", label: "USD / Standard ($)" },
+    { symbol: "$", label: "USD / Dollar ($)" },
     { symbol: "€", label: "Euro (€)" },
     { symbol: "£", label: "British Pound (£)" },
     { symbol: "Rs", label: "Rupees (Rs)" },
@@ -75,34 +98,141 @@ export default function Settings() {
   ];
 
   return (
-    <div className="space-y-6 max-w-4xl mx-auto">
+    <div className="space-y-8 max-w-5xl mx-auto">
       <div>
-        <h1 className="text-2xl font-bold text-slate-800">System & Company Settings</h1>
-        <p className="text-slate-500 text-sm">Customize your organization identity, currency, and invoice presets</p>
+        <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">Company & Branding Settings</h1>
+        <p className="text-slate-500 text-sm mt-1">Configure your corporate identity, logo branding, and default billing formats</p>
       </div>
 
-      <form onSubmit={handleSave} className="space-y-6">
+      <form onSubmit={handleSave} className="space-y-8">
+        {/* Logo & Brand Identity */}
+        <div className="card p-6 md:p-8">
+          <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-primary-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-primary-500/20">
+              <ImageIcon className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-800">Company Logo & Branding</h2>
+              <p className="text-xs text-slate-400">This logo will automatically appear on all Invoices, Quotations, and PDF documents</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+            {/* Logo Controls */}
+            <div className="lg:col-span-7 space-y-4">
+              <div className="flex items-center gap-2 mb-2">
+                <button
+                  type="button"
+                  onClick={() => setUploadMode("url")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    uploadMode === "url"
+                      ? "bg-primary-600 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  <Link className="w-3.5 h-3.5" /> Image URL
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUploadMode("upload")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                    uploadMode === "upload"
+                      ? "bg-primary-600 text-white shadow-sm"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  }`}
+                >
+                  <Upload className="w-3.5 h-3.5" /> Upload File (from PC)
+                </button>
+              </div>
+
+              {uploadMode === "url" ? (
+                <div>
+                  <label className="label">Logo Image URL</label>
+                  <div className="relative">
+                    <input
+                      className="input pl-9"
+                      type="url"
+                      value={form.logo_url}
+                      onChange={e => setForm({ ...form, logo_url: e.target.value })}
+                      placeholder="https://example.com/your-logo.png"
+                    />
+                    <Link className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  </div>
+                  <p className="text-[11px] text-slate-400 mt-1">Paste any direct web link to a PNG, JPG, or SVG image</p>
+                </div>
+              ) : (
+                <div>
+                  <label className="label">Select Image File</label>
+                  <label className="border-2 border-dashed border-slate-200 hover:border-primary-400 bg-slate-50 hover:bg-primary-50/40 rounded-2xl p-6 flex flex-col items-center justify-center cursor-pointer transition-all">
+                    <Upload className="w-8 h-8 text-primary-500 mb-2" />
+                    <span className="text-sm font-semibold text-slate-700">Click to choose image file</span>
+                    <span className="text-xs text-slate-400 mt-0.5">Supports PNG, JPG, WebP, SVG (Max 2MB)</span>
+                    <input type="file" accept="image/*" onChange={handleFileUpload} className="hidden" />
+                  </label>
+                </div>
+              )}
+
+              {form.logo_url && (
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, logo_url: "" })}
+                    className="text-xs text-red-500 hover:text-red-700 font-semibold flex items-center gap-1 p-1 rounded hover:bg-red-50"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Remove Logo
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Live Logo Preview Box */}
+            <div className="lg:col-span-5 bg-gradient-to-b from-slate-50 to-slate-100/70 border border-slate-200 rounded-2xl p-5 text-center flex flex-col items-center justify-center min-h-[190px]">
+              <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Live Header Preview</p>
+              {form.logo_url ? (
+                <div className="bg-white p-3.5 rounded-xl border border-slate-200/80 shadow-sm max-w-[220px] max-h-[100px] flex items-center justify-center overflow-hidden">
+                  <img
+                    src={form.logo_url}
+                    alt="Company Logo"
+                    className="max-h-16 max-w-full object-contain"
+                    onError={e => {
+                      e.target.onerror = null;
+                      e.target.src = "https://placehold.co/180x60/e2e8f0/475569?text=Invalid+Image+URL";
+                    }}
+                  />
+                </div>
+              ) : (
+                <div className="w-28 h-16 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center text-slate-400 text-xs font-medium">
+                  No Logo Set
+                </div>
+              )}
+              <p className="text-[11px] text-slate-500 font-semibold mt-3 truncate max-w-full">
+                {form.company_name || "Your Company Name"}
+              </p>
+            </div>
+          </div>
+        </div>
+
         {/* Company Identity */}
-        <div className="card p-6">
-          <div className="flex items-center gap-3 mb-5 pb-3 border-b border-slate-100">
-            <div className="p-2 bg-primary-100 text-primary-700 rounded-lg">
+        <div className="card p-6 md:p-8">
+          <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-primary-600 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-primary-500/20">
               <Building2 className="w-5 h-5" />
             </div>
             <div>
               <h2 className="text-base font-bold text-slate-800">Company Information</h2>
-              <p className="text-xs text-slate-400">Printed on all generated quotes, invoices, and PDF receipts</p>
+              <p className="text-xs text-slate-400">Official contact & tax details displayed on invoices and quotes</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div className="md:col-span-2">
               <label className="label">Company / Organization Name *</label>
               <input
-                className="input"
+                className="input text-base font-semibold"
                 value={form.company_name}
                 onChange={e => setForm({ ...form, company_name: e.target.value })}
                 required
-                placeholder="e.g. Allied School & Education System"
+                placeholder="e.g. Allied School System"
               />
             </div>
 
@@ -157,22 +287,22 @@ export default function Settings() {
               />
             </div>
 
-            <div>
+            <div className="md:col-span-2">
               <label className="label">TAX / VAT / Registration Number</label>
               <input
                 className="input"
                 value={form.tax_number}
                 onChange={e => setForm({ ...form, tax_number: e.target.value })}
-                placeholder="VAT-987654321"
+                placeholder="VAT-987654321 / NTN-123456"
               />
             </div>
           </div>
         </div>
 
         {/* Currency & Financial Presets */}
-        <div className="card p-6">
-          <div className="flex items-center gap-3 mb-5 pb-3 border-b border-slate-100">
-            <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg">
+        <div className="card p-6 md:p-8">
+          <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-emerald-600 to-teal-600 text-white flex items-center justify-center shadow-md shadow-emerald-500/20">
               <DollarSign className="w-5 h-5" />
             </div>
             <div>
@@ -181,11 +311,11 @@ export default function Settings() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <div>
               <label className="label">Currency Symbol</label>
               <select
-                className="input"
+                className="input font-semibold"
                 value={form.currency_symbol}
                 onChange={e => setForm({ ...form, currency_symbol: e.target.value })}
               >
@@ -201,7 +331,7 @@ export default function Settings() {
               <label className="label">Default Tax Rate (%)</label>
               <div className="relative">
                 <input
-                  className="input pr-8"
+                  className="input pr-8 font-semibold"
                   type="number"
                   step="0.1"
                   value={form.default_tax_rate}
@@ -214,7 +344,7 @@ export default function Settings() {
             <div>
               <label className="label">Invoice Number Prefix</label>
               <input
-                className="input"
+                className="input font-mono font-semibold"
                 value={form.invoice_prefix}
                 onChange={e => setForm({ ...form, invoice_prefix: e.target.value })}
                 placeholder="INV-"
@@ -224,7 +354,7 @@ export default function Settings() {
             <div>
               <label className="label">Quotation Number Prefix</label>
               <input
-                className="input"
+                className="input font-mono font-semibold"
                 value={form.quotation_prefix}
                 onChange={e => setForm({ ...form, quotation_prefix: e.target.value })}
                 placeholder="QUO-"
@@ -244,14 +374,14 @@ export default function Settings() {
           </div>
         </div>
 
-        {/* Action Button */}
-        <div className="flex justify-end gap-3">
-          <button type="submit" disabled={loading} className="btn-primary px-6 py-2.5 text-base shadow-md">
+        {/* Save Action */}
+        <div className="flex justify-end pt-2">
+          <button type="submit" disabled={loading} className="btn-primary px-8 py-3 text-base shadow-lg hover:shadow-xl">
             {loading ? (
               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
             ) : (
               <>
-                <Save className="w-4 h-4" /> Save System Settings
+                <Save className="w-5 h-5" /> Save Company & Branding Settings
               </>
             )}
           </button>

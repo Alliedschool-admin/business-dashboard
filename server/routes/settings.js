@@ -9,6 +9,7 @@ function getSettings() {
   if (!db.data.settings) {
     db.data.settings = {
       company_name: "BizFlow Technologies Inc.",
+      logo_url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80",
       email: "billing@bizflow.com",
       phone: "+1 (555) 019-2834",
       address: "100 Innovation Way, Suite 500",
@@ -34,6 +35,7 @@ router.put("/", requireRole("admin"), (req, res) => {
   const current = getSettings();
   const {
     company_name,
+    logo_url,
     email,
     phone,
     address,
@@ -50,6 +52,7 @@ router.put("/", requireRole("admin"), (req, res) => {
   db.data.settings = {
     ...current,
     company_name: company_name || current.company_name,
+    logo_url: logo_url !== undefined ? logo_url : current.logo_url,
     email: email !== undefined ? email : current.email,
     phone: phone !== undefined ? phone : current.phone,
     address: address !== undefined ? address : current.address,

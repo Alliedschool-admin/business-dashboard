@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { Plus, Pencil, Trash2, Search, Receipt, X, Download, Eye, CreditCard, FileSpreadsheet } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, Receipt, X, Download, Eye, CreditCard, FileSpreadsheet, Building2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { exportToCSV } from "../utils/exportCsv";
 import jsPDF from "jspdf";
@@ -39,6 +39,7 @@ export default function Invoices() {
   const [invoices, setInvoices] = useState([]);
   const [clients, setClients] = useState([]);
   const [products, setProducts] = useState([]);
+  const [companySettings, setCompanySettings] = useState(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [modal, setModal] = useState(null);
@@ -66,6 +67,7 @@ export default function Invoices() {
     load();
     axios.get("/api/clients").then(r => setClients(r.data));
     axios.get("/api/products").then(r => setProducts(r.data));
+    axios.get("/api/settings").then(r => setCompanySettings(r.data)).catch(() => {});
   }, []);
 
   const filtered = invoices.filter(inv => {
@@ -82,9 +84,9 @@ export default function Invoices() {
       date: new Date().toISOString().slice(0, 10),
       due_date: "",
       status: "draft",
-      notes: "",
+      notes: companySettings?.footer_notes || "",
       discount: 0,
-      items: [{ product_id: "", description: "", quantity: 1, unit_price: 0, tax_rate: 10, total: 0 }]
+      items: [{ product_id: "", description: "", quantity: 1, unit_price: 0, tax_rate: companySettings?.default_tax_rate || 10, total: 0 }]
     });
     setEditId(null);
     setModal("form");
@@ -124,7 +126,10 @@ export default function Invoices() {
   const addItem = () =>
     setForm(f => ({
       ...f,
-      items: [...f.items, { product_id: "", description: "", quantity: 1, unit_price: 0, tax_rate: 10, total: 0 }]
+      items: [
+        ...f.items,
+        { product_id: "", description: "", quantity: 1, unit_price: 0, tax_rate: companySettings?.default_tax_rate || 10, total: 0 }
+      ]
     }));
 
   const removeItem = i =>
@@ -200,16 +205,40 @@ export default function Invoices() {
 
   const exportPDF = inv => {
     const doc = new jsPDF();
-    doc.setFontSize(22);
-    doc.text("INVOICE", 14, 20);
-    doc.setFontSize(11);
-    doc.text(`${inv.invoice_number}`, 14, 30);
-    doc.text(`Date: ${inv.date}`, 14, 38);
-    doc.text(`Due: ${inv.due_date || "—"}`, 14, 46);
-    doc.text(`Client: ${inv.client_name}`, 14, 54);
-    doc.text(`Status: ${inv.status?.toUpperCase()}`, 14, 62);
+    const cName = companySettings?.company_name || "BizFlow";
+    
+    doc.setFontSize(20);
+    doc.setTextColor(30, 41, 59);
+    doc.text(cName, 14, 20);
+    
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    let yPos = 26;
+    if (companySettings?.address) { doc.text(companySettings.address, 14, yPos); yPos += 5; }
+    if (companySettings?.phone || companySettings?.email) {
+      doc.text(`${companySettings.phone || ""} | ${companySettings.email || ""}`, 14, yPos);
+      yPos += 5;
+    }
+    if (companySettings?.tax_number) { doc.text(`TAX / VAT: ${companySettings.tax_number}`, 14, yPos); yPos += 7; }
+    
+    doc.setFontSize(15);
+    doc.setTextColor(14, 165, 233);
+    doc.text(`INVOICE: ${inv.invoice_number}`, 14, yPos + 4);
+    
+    doc.setFontSize(9);
+    doc.setTextColor(51, 65, 85);
+    doc.text(`Issue Date: ${inv.date}`, 140, 20);
+    doc.text(`Due Date: ${inv.due_date || "—"}`, 140, 26);
+    doc.text(`Status: ${inv.status?.toUpperCase()}`, 140, 32);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(30, 41, 59);
+    doc.text("BILLED TO:", 14, yPos + 16);
+    doc.text(inv.client_name || "Client", 14, yPos + 22);
+    if (inv.client_email) doc.text(inv.client_email, 14, yPos + 27);
+
     autoTable(doc, {
-      startY: 72,
+      startY: yPos + 34,
       head: [["Description", "Qty", "Unit Price", "Tax%", "Total"]],
       body: (inv.items || []).map(it => [
         it.description,
@@ -223,8 +252,10 @@ export default function Invoices() {
         ["", "", "", "Tax", fmt(inv.tax_amount)],
         ["", "", "", "TOTAL", fmt(inv.total)],
         inv.paid_amount > 0 ? ["", "", "", "Paid", fmt(inv.paid_amount)] : null
-      ].filter(Boolean)
+      ].filter(Boolean),
+      headStyles: { fillColor: [14, 165, 233] }
     });
+    
     doc.save(`${inv.invoice_number}.pdf`);
   };
 
@@ -608,66 +639,108 @@ export default function Invoices() {
         </Modal>
       )}
 
+      {/* Branded Invoice Preview with Company Logo */}
       {modal === "view" && viewData && (
-        <Modal title={viewData.invoice_number} onClose={() => setModal(null)}>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-xl">
-              <div>
-                <span className="text-slate-500 text-xs block">Billed To</span>
-                <strong className="text-base text-slate-800">{viewData.client_name}</strong>
-                {viewData.client_email && <div className="text-xs text-slate-500">{viewData.client_email}</div>}
+        <Modal title={`Invoice ${viewData.invoice_number}`} onClose={() => setModal(null)}>
+          <div className="space-y-6">
+            {/* Header with Logo */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-gradient-to-r from-slate-50 to-slate-100/60 rounded-2xl border border-slate-200/80">
+              <div className="flex items-center gap-4">
+                {companySettings?.logo_url ? (
+                  <div className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm max-h-16 max-w-[140px] flex items-center justify-center overflow-hidden">
+                    <img
+                      src={companySettings.logo_url}
+                      alt="Company Logo"
+                      className="max-h-12 object-contain"
+                      onError={e => {
+                        e.target.style.display = "none";
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="w-12 h-12 bg-primary-600 text-white rounded-xl flex items-center justify-center shadow-md">
+                    <Building2 className="w-6 h-6" />
+                  </div>
+                )}
+                <div>
+                  <h3 className="font-bold text-lg text-slate-800">{companySettings?.company_name || "BizFlow"}</h3>
+                  <p className="text-xs text-slate-500">{companySettings?.address}</p>
+                  <p className="text-xs text-slate-400">
+                    {companySettings?.email} {companySettings?.phone ? `• ${companySettings.phone}` : ""}
+                  </p>
+                </div>
               </div>
-              <div>
-                <span className="text-slate-500 text-xs block">Invoice Status</span>
-                <span className={`badge mt-1 ${STATUS_STYLES[viewData.status]}`}>{viewData.status}</span>
-              </div>
-              <div>
-                <span className="text-slate-500 text-xs block">Date Issued</span>
-                <span className="font-medium text-slate-700">{viewData.date}</span>
-              </div>
-              <div>
-                <span className="text-slate-500 text-xs block">Due Date</span>
-                <span className="font-medium text-slate-700">{viewData.due_date || "—"}</span>
+              <div className="text-right">
+                <span className={`badge text-xs uppercase ${STATUS_STYLES[viewData.status]}`}>{viewData.status}</span>
+                <p className="font-mono font-bold text-primary-600 text-lg mt-1">{viewData.invoice_number}</p>
               </div>
             </div>
 
+            {/* Bill Details */}
+            <div className="grid grid-cols-2 gap-4 text-sm bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+              <div>
+                <span className="text-slate-400 text-xs font-bold uppercase block mb-1">Billed To</span>
+                <strong className="text-slate-800 text-base">{viewData.client_name}</strong>
+                {viewData.client_email && <div className="text-xs text-slate-500 mt-0.5">{viewData.client_email}</div>}
+                {viewData.address && <div className="text-xs text-slate-500">{viewData.address}</div>}
+              </div>
+              <div className="text-right space-y-1">
+                <div>
+                  <span className="text-slate-400 text-xs font-semibold mr-2">Issue Date:</span>
+                  <span className="font-medium text-slate-700">{viewData.date}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-xs font-semibold mr-2">Due Date:</span>
+                  <span className="font-medium text-slate-700">{viewData.due_date || "—"}</span>
+                </div>
+                {viewData.payment_method && (
+                  <div>
+                    <span className="text-slate-400 text-xs font-semibold mr-2">Method:</span>
+                    <span className="capitalize text-slate-700">{viewData.payment_method.replace("_", " ")}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Line items */}
             <table className="w-full text-sm">
-              <thead className="bg-slate-100">
+              <thead className="bg-slate-100/80">
                 <tr>
-                  <th className="table-th">Description</th>
-                  <th className="table-th">Qty</th>
-                  <th className="table-th">Unit Price</th>
+                  <th className="table-th">Item Description</th>
+                  <th className="table-th text-center">Qty</th>
+                  <th className="table-th text-right">Unit Price</th>
                   <th className="table-th text-right">Total</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100">
                 {(viewData.items || []).map((it, i) => (
-                  <tr key={i} className="border-b">
-                    <td className="table-td">{it.description}</td>
-                    <td className="table-td">{it.quantity}</td>
-                    <td className="table-td">{fmt(it.unit_price)}</td>
-                    <td className="table-td text-right font-semibold">{fmt(it.total)}</td>
+                  <tr key={i}>
+                    <td className="table-td font-medium text-slate-800">{it.description}</td>
+                    <td className="table-td text-center text-slate-600">{it.quantity}</td>
+                    <td className="table-td text-right text-slate-600">{fmt(it.unit_price)}</td>
+                    <td className="table-td text-right font-semibold text-slate-900">{fmt(it.total)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
 
+            {/* Totals */}
             <div className="flex justify-end">
-              <div className="w-56 space-y-1 text-sm bg-slate-50 p-3 rounded-lg">
+              <div className="w-64 space-y-1.5 text-sm bg-slate-50 p-4 rounded-xl border border-slate-200/80">
                 <div className="flex justify-between text-slate-600">
                   <span>Subtotal</span>
                   <span>{fmt(viewData.subtotal)}</span>
                 </div>
                 <div className="flex justify-between text-slate-600">
-                  <span>Tax Amount</span>
+                  <span>Tax</span>
                   <span>{fmt(viewData.tax_amount)}</span>
                 </div>
-                <div className="flex justify-between font-bold text-base border-t pt-1">
-                  <span>Total</span>
+                <div className="flex justify-between font-bold text-base border-t border-slate-200 pt-2 text-slate-900">
+                  <span>Total Due</span>
                   <span>{fmt(viewData.total)}</span>
                 </div>
                 {viewData.paid_amount > 0 && (
-                  <div className="flex justify-between text-emerald-600 font-semibold">
+                  <div className="flex justify-between text-emerald-600 font-semibold text-sm">
                     <span>Paid to Date</span>
                     <span>{fmt(viewData.paid_amount)}</span>
                   </div>
@@ -675,9 +748,16 @@ export default function Invoices() {
               </div>
             </div>
 
-            <div className="flex gap-3 justify-end pt-3">
+            {viewData.notes && (
+              <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-600 border border-slate-100">
+                <span className="font-semibold block mb-0.5 text-slate-700">Notes & Payment Terms:</span>
+                {viewData.notes}
+              </div>
+            )}
+
+            <div className="flex gap-3 justify-end pt-2">
               <button onClick={() => exportPDF(viewData)} className="btn-secondary">
-                <Download className="w-4 h-4" /> Export PDF
+                <Download className="w-4 h-4" /> Download PDF Receipt
               </button>
               {viewData.status !== "paid" && viewData.status !== "cancelled" && (
                 <button

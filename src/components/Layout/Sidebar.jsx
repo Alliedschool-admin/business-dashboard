@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { NavLink } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import axios from "axios";
@@ -42,6 +42,7 @@ const roleColors = {
 
 export default function Sidebar({ mobile, onClose }) {
   const { user, logout } = useAuth();
+  const [companySettings, setCompanySettings] = useState(null);
   const [profileModal, setProfileModal] = useState(false);
   const [name, setName] = useState(user?.name || "");
   const [email, setEmail] = useState(user?.email || "");
@@ -50,6 +51,13 @@ export default function Sidebar({ mobile, onClose }) {
   const [showCurrent, setShowCurrent] = useState(false);
   const [showNew, setShowNew] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    axios
+      .get("/api/settings")
+      .then(r => setCompanySettings(r.data))
+      .catch(() => {});
+  }, []);
 
   const openProfile = () => {
     setName(user?.name || "");
@@ -82,21 +90,36 @@ export default function Sidebar({ mobile, onClose }) {
 
   return (
     <>
-      <div className={clsx("flex flex-col h-full bg-slate-900 text-white", mobile ? "w-full" : "w-64")}>
-        {/* Logo */}
-        <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-800">
-          <div className="w-9 h-9 bg-primary-500 rounded-xl flex items-center justify-center shadow-lg">
-            <Wallet className="w-5 h-5 text-white" />
-          </div>
-          <div>
-            <h1 className="font-bold text-lg text-white leading-tight">BizFlow</h1>
-            <p className="text-xs text-slate-400">Business Suite</p>
+      <div className={clsx("flex flex-col h-full bg-slate-900 text-white border-r border-slate-800/80", mobile ? "w-full" : "w-64")}>
+        {/* Logo Header */}
+        <div className="flex items-center gap-3 px-6 py-5 border-b border-slate-800/80 bg-slate-950/20">
+          {companySettings?.logo_url ? (
+            <div className="w-10 h-10 rounded-xl bg-white p-1 flex items-center justify-center overflow-hidden shadow-md flex-shrink-0">
+              <img
+                src={companySettings.logo_url}
+                alt="Logo"
+                className="max-h-8 max-w-full object-contain"
+                onError={e => {
+                  e.target.style.display = "none";
+                }}
+              />
+            </div>
+          ) : (
+            <div className="w-10 h-10 bg-gradient-to-tr from-primary-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg shadow-primary-500/20 flex-shrink-0">
+              <Wallet className="w-5 h-5 text-white" />
+            </div>
+          )}
+          <div className="min-w-0 flex-1">
+            <h1 className="font-bold text-base text-white leading-tight truncate">
+              {companySettings?.company_name || "BizFlow"}
+            </h1>
+            <p className="text-[11px] text-slate-400 font-medium">Business Suite</p>
           </div>
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-3 mb-3">Main Menu</p>
+        <nav className="flex-1 px-3 py-4 space-y-1.5 overflow-y-auto">
+          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest px-3 mb-3">Main Menu</p>
           {navItems.map(item => {
             if (item.roles && !item.roles.includes(user?.role)) return null;
             return (
@@ -107,10 +130,10 @@ export default function Sidebar({ mobile, onClose }) {
                 onClick={onClose}
                 className={({ isActive }) =>
                   clsx(
-                    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150",
+                    "flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200",
                     isActive
-                      ? "bg-primary-600 text-white shadow-sm"
-                      : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                      ? "bg-gradient-to-r from-primary-600 to-indigo-600 text-white shadow-md shadow-primary-500/20"
+                      : "text-slate-400 hover:bg-slate-800/80 hover:text-white"
                   )
                 }
               >
@@ -123,17 +146,17 @@ export default function Sidebar({ mobile, onClose }) {
         </nav>
 
         {/* User footer */}
-        <div className="px-4 py-4 border-t border-slate-800 bg-slate-950/40">
+        <div className="px-4 py-4 border-t border-slate-800/80 bg-slate-950/40">
           <div
             onClick={openProfile}
-            className="flex items-center gap-3 mb-3 p-2 rounded-lg hover:bg-slate-800/80 cursor-pointer transition-colors group"
+            className="flex items-center gap-3 mb-3 p-2 rounded-xl hover:bg-slate-800/80 cursor-pointer transition-all group"
             title="Click to edit profile & password"
           >
-            <div className="w-9 h-9 rounded-xl bg-primary-600 flex items-center justify-center text-sm font-bold shadow">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-primary-500 to-indigo-600 flex items-center justify-center text-sm font-bold shadow-md shadow-primary-500/20">
               {user?.name?.charAt(0).toUpperCase()}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-white truncate group-hover:text-primary-300 transition-colors">
+              <p className="text-sm font-semibold text-white truncate group-hover:text-primary-300 transition-colors">
                 {user?.name}
               </p>
               <span className={clsx("badge text-[10px] mt-0.5", roleColors[user?.role])}>{user?.role}</span>
@@ -144,13 +167,13 @@ export default function Sidebar({ mobile, onClose }) {
           <div className="grid grid-cols-2 gap-2">
             <button
               onClick={openProfile}
-              className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 transition-colors"
+              className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl text-xs font-semibold text-slate-300 bg-slate-800/80 hover:bg-slate-700 transition-colors"
             >
               <Key className="w-3.5 h-3.5" /> Password
             </button>
             <button
               onClick={logout}
-              className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-lg text-xs font-medium text-red-400 bg-slate-800 hover:bg-red-500/20 transition-colors"
+              className="flex items-center justify-center gap-1.5 px-2 py-1.5 rounded-xl text-xs font-semibold text-rose-400 bg-slate-800/80 hover:bg-rose-500/20 transition-colors"
             >
               <LogOut className="w-3.5 h-3.5" /> Sign Out
             </button>

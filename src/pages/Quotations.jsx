@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import toast from "react-hot-toast";
-import { Plus, Pencil, Trash2, Search, FileText, X, ArrowRight, Download, Eye, FileSpreadsheet } from "lucide-react";
+import { Plus, Pencil, Trash2, Search, FileText, X, ArrowRight, Download, Eye, FileSpreadsheet, Building2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { exportToCSV } from "../utils/exportCsv";
 import jsPDF from "jspdf";
@@ -38,6 +38,7 @@ export default function Quotations() {
   const [quotes, setQuotes] = useState([]);
   const [clients, setClients] = useState([]);
   const [products, setProducts] = useState([]);
+  const [companySettings, setCompanySettings] = useState(null);
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState(null);
   const [editId, setEditId] = useState(null);
@@ -58,6 +59,7 @@ export default function Quotations() {
     load();
     axios.get("/api/clients").then(r => setClients(r.data));
     axios.get("/api/products").then(r => setProducts(r.data));
+    axios.get("/api/settings").then(r => setCompanySettings(r.data)).catch(() => {});
   }, []);
 
   const filtered = quotes.filter(
@@ -72,9 +74,9 @@ export default function Quotations() {
       date: new Date().toISOString().slice(0, 10),
       valid_until: "",
       status: "draft",
-      notes: "",
+      notes: companySettings?.footer_notes || "",
       discount: 0,
-      items: [{ product_id: "", description: "", quantity: 1, unit_price: 0, tax_rate: 10, total: 0 }]
+      items: [{ product_id: "", description: "", quantity: 1, unit_price: 0, tax_rate: companySettings?.default_tax_rate || 10, total: 0 }]
     });
     setEditId(null);
     setModal("form");
@@ -104,7 +106,10 @@ export default function Quotations() {
   const addItem = () =>
     setForm(f => ({
       ...f,
-      items: [...f.items, { product_id: "", description: "", quantity: 1, unit_price: 0, tax_rate: 10, total: 0 }]
+      items: [
+        ...f.items,
+        { product_id: "", description: "", quantity: 1, unit_price: 0, tax_rate: companySettings?.default_tax_rate || 10, total: 0 }
+      ]
     }));
 
   const removeItem = i =>
@@ -132,7 +137,7 @@ export default function Quotations() {
 
   const calcTotals = () => {
     const subtotal = form.items.reduce((s, it) => s + it.quantity * it.unit_price, 0);
-    const tax = form.items.reduce((s, it) => s + it.quantity * it.unit_price*(it.tax_rate / 100), 0);
+    const tax = form.items.reduce((s, it) => s + it.quantity * it.unit_price * (it.tax_rate / 100), 0);
     const total = subtotal + tax - (form.discount || 0);
     return { subtotal, tax, total };
   };
@@ -173,22 +178,47 @@ export default function Quotations() {
 
   const exportPDF = q => {
     const doc = new jsPDF();
+    const cName = companySettings?.company_name || "BizFlow";
+    
     doc.setFontSize(20);
-    doc.text("QUOTATION", 14, 20);
-    doc.setFontSize(11);
-    doc.text(`${q.quotation_number}`, 14, 30);
-    doc.text(`Date: ${q.date}`, 14, 38);
-    doc.text(`Valid Until: ${q.valid_until || "—"}`, 14, 46);
-    doc.text(`Client: ${q.client_name}`, 14, 54);
+    doc.setTextColor(30, 41, 59);
+    doc.text(cName, 14, 20);
+    
+    doc.setFontSize(9);
+    doc.setTextColor(100, 116, 139);
+    let yPos = 26;
+    if (companySettings?.address) { doc.text(companySettings.address, 14, yPos); yPos += 5; }
+    if (companySettings?.phone || companySettings?.email) {
+      doc.text(`${companySettings.phone || ""} | ${companySettings.email || ""}`, 14, yPos);
+      yPos += 5;
+    }
+    if (companySettings?.tax_number) { doc.text(`TAX / VAT: ${companySettings.tax_number}`, 14, yPos); yPos += 7; }
+
+    doc.setFontSize(15);
+    doc.setTextColor(14, 165, 233);
+    doc.text(`QUOTATION: ${q.quotation_number}`, 14, yPos + 4);
+
+    doc.setFontSize(9);
+    doc.setTextColor(51, 65, 85);
+    doc.text(`Date: ${q.date}`, 140, 20);
+    doc.text(`Valid Until: ${q.valid_until || "—"}`, 140, 26);
+    doc.text(`Status: ${q.status?.toUpperCase()}`, 140, 32);
+
+    doc.setFontSize(10);
+    doc.setTextColor(30, 41, 59);
+    doc.text("PREPARED FOR:", 14, yPos + 16);
+    doc.text(q.client_name || "Client", 14, yPos + 22);
+
     autoTable(doc, {
-      startY: 65,
-      head: [["Description", "Qty", "Unit Price", "Tax", "Total"]],
+      startY: yPos + 34,
+      head: [["Description", "Qty", "Unit Price", "Tax%", "Total"]],
       body: (q.items || []).map(it => [it.description, it.quantity, fmt(it.unit_price), `${it.tax_rate}%`, fmt(it.total)]),
       foot: [
         ["", "", "", "Subtotal", fmt(q.subtotal)],
         ["", "", "", "Tax", fmt(q.tax_amount)],
-        ["", "", "", "Total", fmt(q.total)]
-      ]
+        ["", "", "", "TOTAL", fmt(q.total)]
+      ],
+      headStyles: { fillColor: [14, 165, 233] }
     });
     doc.save(`${q.quotation_number}.pdf`);
   };
@@ -496,69 +526,109 @@ export default function Quotations() {
         </Modal>
       )}
 
+      {/* Branded Quotation Preview with Company Logo */}
       {modal === "view" && viewData && (
         <Modal title={viewData.quotation_number} onClose={() => setModal(null)}>
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 text-sm bg-slate-50 p-4 rounded-xl">
-              <div>
-                <span className="text-slate-500 text-xs block">Client</span>
-                <strong className="text-base text-slate-800">{viewData.client_name}</strong>
+          <div className="space-y-6">
+            {/* Header with Logo */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-5 bg-gradient-to-r from-slate-50 to-slate-100/60 rounded-2xl border border-slate-200/80">
+              <div className="flex items-center gap-4">
+                {companySettings?.logo_url ? (
+                  <div className="bg-white p-2 rounded-xl border border-slate-200 shadow-sm max-h-16 max-w-[140px] flex items-center justify-center overflow-hidden">
+                    <img
+                      src={companySettings.logo_url}
+                      alt="Company Logo"
+                      className="max-h-12 object-contain"
+                      onError={e => {
+                        e.target.style.display = "none";
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <div className="w-12 h-12 bg-primary-600 text-white rounded-xl flex items-center justify-center shadow-md">
+                    <Building2 className="w-6 h-6" />
+                  </div>
+                )}
+                <div>
+                  <h3 className="font-bold text-lg text-slate-800">{companySettings?.company_name || "BizFlow"}</h3>
+                  <p className="text-xs text-slate-500">{companySettings?.address}</p>
+                  <p className="text-xs text-slate-400">
+                    {companySettings?.email} {companySettings?.phone ? `• ${companySettings.phone}` : ""}
+                  </p>
+                </div>
               </div>
-              <div>
-                <span className="text-slate-500 text-xs block">Status</span>
-                <span className={`badge mt-1 ${STATUS_STYLES[viewData.status]}`}>{viewData.status}</span>
-              </div>
-              <div>
-                <span className="text-slate-500 text-xs block">Quotation Date</span>
-                <span className="font-medium text-slate-700">{viewData.date}</span>
-              </div>
-              <div>
-                <span className="text-slate-500 text-xs block">Valid Until</span>
-                <span className="font-medium text-slate-700">{viewData.valid_until || "—"}</span>
+              <div className="text-right">
+                <span className={`badge text-xs uppercase ${STATUS_STYLES[viewData.status]}`}>{viewData.status}</span>
+                <p className="font-mono font-bold text-primary-600 text-lg mt-1">{viewData.quotation_number}</p>
               </div>
             </div>
+
+            {/* Meta */}
+            <div className="grid grid-cols-2 gap-4 text-sm bg-slate-50/50 p-4 rounded-xl border border-slate-100">
+              <div>
+                <span className="text-slate-400 text-xs font-bold uppercase block mb-1">Prepared For</span>
+                <strong className="text-slate-800 text-base">{viewData.client_name}</strong>
+              </div>
+              <div className="text-right space-y-1">
+                <div>
+                  <span className="text-slate-400 text-xs font-semibold mr-2">Quotation Date:</span>
+                  <span className="font-medium text-slate-700">{viewData.date}</span>
+                </div>
+                <div>
+                  <span className="text-slate-400 text-xs font-semibold mr-2">Valid Until:</span>
+                  <span className="font-medium text-slate-700">{viewData.valid_until || "—"}</span>
+                </div>
+              </div>
+            </div>
+
             <table className="w-full text-sm">
-              <thead className="bg-slate-100">
+              <thead className="bg-slate-100/80">
                 <tr>
-                  <th className="table-th">Description</th>
-                  <th className="table-th">Qty</th>
-                  <th className="table-th">Unit Price</th>
-                  <th className="table-th">Tax</th>
+                  <th className="table-th">Item Description</th>
+                  <th className="table-th text-center">Qty</th>
+                  <th className="table-th text-right">Unit Price</th>
                   <th className="table-th text-right">Total</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-slate-100">
                 {(viewData.items || []).map((it, i) => (
-                  <tr key={i} className="border-b">
-                    <td className="table-td">{it.description}</td>
-                    <td className="table-td">{it.quantity}</td>
-                    <td className="table-td">{fmt(it.unit_price)}</td>
-                    <td className="table-td">{it.tax_rate}%</td>
-                    <td className="table-td text-right font-semibold">{fmt(it.total)}</td>
+                  <tr key={i}>
+                    <td className="table-td font-medium text-slate-800">{it.description}</td>
+                    <td className="table-td text-center text-slate-600">{it.quantity}</td>
+                    <td className="table-td text-right text-slate-600">{fmt(it.unit_price)}</td>
+                    <td className="table-td text-right font-semibold text-slate-900">{fmt(it.total)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+
             <div className="flex justify-end">
-              <div className="w-52 space-y-1 text-sm bg-slate-50 p-3 rounded-lg">
-                <div className="flex justify-between">
+              <div className="w-64 space-y-1.5 text-sm bg-slate-50 p-4 rounded-xl border border-slate-200/80">
+                <div className="flex justify-between text-slate-600">
                   <span>Subtotal</span>
                   <span>{fmt(viewData.subtotal)}</span>
                 </div>
-                <div className="flex justify-between">
+                <div className="flex justify-between text-slate-600">
                   <span>Tax</span>
                   <span>{fmt(viewData.tax_amount)}</span>
                 </div>
-                <div className="flex justify-between font-bold text-base border-t pt-1">
-                  <span>Total</span>
+                <div className="flex justify-between font-bold text-base border-t border-slate-200 pt-2 text-slate-900">
+                  <span>Total Amount</span>
                   <span>{fmt(viewData.total)}</span>
                 </div>
               </div>
             </div>
-            {viewData.notes && <p className="text-sm text-slate-500 bg-slate-50 p-3 rounded-lg">{viewData.notes}</p>}
+
+            {viewData.notes && (
+              <div className="p-3 bg-slate-50 rounded-xl text-xs text-slate-600 border border-slate-100">
+                <span className="font-semibold block mb-0.5 text-slate-700">Notes & Terms:</span>
+                {viewData.notes}
+              </div>
+            )}
+
             <div className="flex gap-3 justify-end pt-2">
               <button onClick={() => exportPDF(viewData)} className="btn-secondary">
-                <Download className="w-4 h-4" /> Export PDF
+                <Download className="w-4 h-4" /> Download PDF Quotation
               </button>
               {viewData.status !== "accepted" && (
                 <button
