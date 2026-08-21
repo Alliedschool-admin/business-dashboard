@@ -6,10 +6,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Sync Cloud Database middleware on serverless
+// Sync Cloud Database on every request
 app.use(async (req, res, next) => {
-  if (process.env.MONGODB_URI && !db.mongoConnected) {
-    await db.initMongo().catch(() => {});
+  if (process.env.MONGODB_URI && (!db.mongoConnected || !db.isLoaded)) {
+    try {
+      await db.ensureConnected();
+    } catch (e) {}
   }
   next();
 });
@@ -25,12 +27,17 @@ app.use("/api/users", require("../server/routes/users"));
 app.use("/api/dashboard", require("../server/routes/dashboard"));
 app.use("/api/settings", require("../server/routes/settings"));
 
-app.get("/api/health", (req, res) =>
+app.get("/api/health", async (req, res) => {
+  if (process.env.MONGODB_URI) {
+    await db.ensureConnected().catch(() => {});
+  }
   res.json({
     status: "ok",
     cloud_database: db.mongoConnected ? "Connected (MongoDB Atlas)" : "Local/Memory Storage",
+    error: db.lastError || null,
+    has_mongodb_uri: !!process.env.MONGODB_URI,
     time: new Date()
-  })
-);
+  });
+});
 
 module.exports = app;

@@ -17,7 +17,10 @@ import {
   CheckCircle,
   AlertTriangle,
   RefreshCw,
-  Database
+  Database,
+  Cloud,
+  Server,
+  HelpCircle
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -38,19 +41,32 @@ export default function Settings() {
     quotation_prefix: "QUO-",
     footer_notes: ""
   });
+  const [dbStatus, setDbStatus] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [checkingDb, setCheckingDb] = useState(false);
   const [clearingData, setClearingData] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [uploadMode, setUploadMode] = useState("url"); // "url" | "upload"
 
+  const checkDb = async () => {
+    setCheckingDb(true);
+    try {
+      const { data } = await axios.get("/api/settings/db-status");
+      setDbStatus(data);
+    } catch (e) {
+      setDbStatus({ connected: false, error: "Failed to query database status" });
+    } finally {
+      setCheckingDb(false);
+    }
+  };
+
   useEffect(() => {
     axios
       .get("/api/settings")
-      .then(r => {
-        setForm(r.data);
-      })
+      .then(r => setForm(r.data))
       .catch(() => toast.error("Failed to load settings"))
       .finally(() => setFetching(false));
+    checkDb();
   }, []);
 
   const handleFileUpload = e => {
@@ -122,9 +138,88 @@ export default function Settings() {
 
   return (
     <div className="space-y-8 max-w-5xl mx-auto">
-      <div>
-        <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">Company & Branding Settings</h1>
-        <p className="text-slate-500 text-sm mt-1">Configure your corporate identity, logo branding, and default billing formats</p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 tracking-tight">Company & Database Settings</h1>
+          <p className="text-slate-500 text-sm mt-1">Configure company branding, currency, and verify permanent cloud database connection</p>
+        </div>
+      </div>
+
+      {/* Cloud Database Live Status Card */}
+      <div className={`card p-6 border-2 transition-all ${
+        dbStatus?.connected
+          ? "border-emerald-200 bg-gradient-to-r from-emerald-50/40 via-white to-teal-50/20"
+          : "border-amber-200 bg-gradient-to-r from-amber-50/40 via-white to-orange-50/20"
+      }`}>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shadow-md flex-shrink-0 ${
+              dbStatus?.connected ? "bg-emerald-600 text-white shadow-emerald-500/20" : "bg-amber-500 text-white shadow-amber-500/20"
+            }`}>
+              <Cloud className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="font-bold text-base text-slate-900">Cloud Database Status:</h3>
+                {dbStatus?.connected ? (
+                  <span className="badge bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold px-3 py-1 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                    🟢 Connected to MongoDB Atlas (Permanent 24/7)
+                  </span>
+                ) : (
+                  <span className="badge bg-amber-100 text-amber-800 border border-amber-300 font-bold px-3 py-1 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                    🟡 Local / Temporary Memory Mode
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-500 mt-1.5">
+                {dbStatus?.connected
+                  ? "All invoices, clients, products, quotes, expenses, and settings are saved permanently in your MongoDB Atlas cloud database."
+                  : dbStatus?.has_env
+                  ? "MONGODB_URI detected, but connection was not completed. Check error diagnostics below."
+                  : "Running on temporary storage. Add MONGODB_URI to Vercel Environment Variables to make data permanent."}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={checkDb}
+            disabled={checkingDb}
+            className="btn-secondary whitespace-nowrap text-xs self-start md:self-center"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${checkingDb ? "animate-spin" : ""}`} />
+            {checkingDb ? "Checking..." : "Re-Check Status"}
+          </button>
+        </div>
+
+        {/* Diagnostic Guide if not connected */}
+        {!dbStatus?.connected && (
+          <div className="mt-4 pt-4 border-t border-amber-200/70 text-xs text-slate-700 space-y-2">
+            {dbStatus?.error && (
+              <div className="p-3 bg-red-50 text-red-800 rounded-xl border border-red-200 font-mono text-[11px]">
+                <strong>Connection Error:</strong> {dbStatus.error}
+              </div>
+            )}
+            <div className="bg-white/80 p-3 rounded-xl border border-amber-200/80 space-y-1.5">
+              <p className="font-semibold text-slate-800 flex items-center gap-1">
+                <HelpCircle className="w-3.5 h-3.5 text-amber-600" /> How to fix & make data permanent:
+              </p>
+              <ol className="list-decimal pl-5 space-y-1 text-slate-600">
+                <li>
+                  In <strong>MongoDB Atlas</strong> ➔ <strong>Network Access</strong> ➔ Click <strong>Add IP Address</strong> ➔ Choose <strong>Allow Access from Anywhere (`0.0.0.0/0`)</strong>.
+                </li>
+                <li>
+                  In <strong>Vercel Dashboard</strong> ➔ <strong>Settings</strong> ➔ <strong>Environment Variables</strong> ➔ Add <code className="bg-slate-100 px-1 py-0.5 rounded font-bold">MONGODB_URI</code>.
+                </li>
+                <li>
+                  Go to <strong>Deployments</strong> tab in Vercel ➔ Click the 3 dots on the latest deployment ➔ Click <strong>Redeploy</strong>.
+                </li>
+              </ol>
+            </div>
+          </div>
+        )}
       </div>
 
       <form onSubmit={handleSave} className="space-y-8">
@@ -141,7 +236,6 @@ export default function Settings() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-            {/* Logo Controls */}
             <div className="lg:col-span-7 space-y-4">
               <div className="flex items-center gap-2 mb-2">
                 <button
@@ -208,7 +302,6 @@ export default function Settings() {
               )}
             </div>
 
-            {/* Live Logo Preview Box */}
             <div className="lg:col-span-5 bg-gradient-to-b from-slate-50 to-slate-100/70 border border-slate-200 rounded-2xl p-5 text-center flex flex-col items-center justify-center min-h-[190px]">
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-3">Live Header Preview</p>
               {form.logo_url ? (

@@ -1,133 +1,105 @@
 const router = require("express").Router();
-const db = require("../db");
 const bcrypt = require("bcryptjs");
+const db = require("../db");
 const { authenticate, requireRole } = require("../auth");
 
 router.use(authenticate);
 
-// Get all users (Admin only)
 router.get("/", requireRole("admin"), (req, res) => {
-  const list = db.data.users.map(u => ({
-    id: u.id,
-    name: u.name,
-    email: u.email,
-    role: u.role,
-    is_active: u.is_active,
-    created_at: u.created_at
-  }));
-  res.json(list);
+  const users = (db.data.users || []).map(({ password, ...u }) => u);
+  res.json(users);
 });
 
-// Create new user (Admin only)
-router.post("/", requireRole("admin"), (req, res) => {
+router.post("/", requireRole("admin"), async (req, res) => {
   const { name, email, password, role } = req.body;
   if (!name || !email || !password) {
-    return res.status(400).json({ error: "Name, email and password are required" });
+    return res.status(400).json({ error: "Name, email, and password are required" });
   }
 
-  const existing = db.data.users.find(u => u.email.toLowerCase() === email.toLowerCase());
+  const existing = (db.data.users || []).find(u => u.email.toLowerCase() === email.toLowerCase());
   if (existing) {
-    return res.status(400).json({ error: "User with this email already exists" });
+    return res.status(400).json({ error: "A user with this email already exists" });
   }
 
-  const hash = bcrypt.hashSync(password, 10);
   const newUser = {
     id: db.nextId("users"),
     name,
-    email,
-    password: hash,
+    email: email.toLowerCase(),
+    password: bcrypt.hashSync(password, 10),
     role: role || "staff",
     is_active: 1,
     created_at: new Date().toISOString().replace("T", " ").slice(0, 19)
   };
 
+  if (!db.data.users) db.data.users = [];
   db.data.users.push(newUser);
-  db.save();
-  res.json({ id: newUser.id, message: "User created successfully" });
+  await db.save();
+
+  const { password: _, ...userWithoutPass } = newUser;
+  res.json({ user: userWithoutPass, message: "User created successfully" });
 });
 
-// Update user details, username/name, email, role, status, and optional password (Admin only)
-router.put("/:id", requireRole("admin"), (req, res) => {
-  const uId = parseInt(req.params.id);
-  const u = db.data.users.find(x => x.id === uId);
-  if (!u) return res.status(404).json({ error: "User not found" });
-
-  const { name, email, role, is_active, password } = req.body;
-
-  if (email && email.toLowerCase() !== u.email.toLowerCase()) {
-    const existing = db.data.users.find(x => x.id !== uId && x.email.toLowerCase() === email.toLowerCase());
-    if (existing) return res.status(400).json({ error: "Email already taken by another user" });
-    u.email = email;
-  }
-
-  if (name) u.name = name;
-  if (role) u.role = role;
-  if (is_active !== undefined) u.is_active = parseInt(is_active);
-  if (password && password.trim().length > 0) {
-    u.password = bcrypt.hashSync(password.trim(), 10);
-  }
-
-  db.save();
-  res.json({ message: "User updated successfully" });
-});
-
-// Admin direct reset password for any user
-router.put("/:id/password", requireRole("admin"), (req, res) => {
-  const uId = parseInt(req.params.id);
-  const u = db.data.users.find(x => x.id === uId);
-  if (!u) return res.status(404).json({ error: "User not found" });
-
-  const { new_password } = req.body;
-  if (!new_password || new_password.trim().length < 4) {
-    return res.status(400).json({ error: "Password must be at least 4 characters" });
-  }
-
-  u.password = bcrypt.hashSync(new_password.trim(), 10);
-  db.save();
-  res.json({ message: `Password for ${u.name} updated successfully` });
-});
-
-// Self-service: update own profile & password
-router.put("/profile/me", (req, res) => {
-  const u = db.data.users.find(x => x.id === req.user.id);
-  if (!u) return res.status(404).json({ error: "User not found" });
-
+router.put("/profile/me", async (req, res) => {
   const { name, email, current_password, new_password } = req.body;
+  const user = (db.data.users || []).find(u => u.id === req.user.id);
+  if (!user) return res.status(404).json({ error: "User not found" });
 
-  if (email && email.toLowerCase() !== u.email.toLowerCase()) {
-    const existing = db.data.users.find(x => x.id !== u.id && x.email.toLowerCase() === email.toLowerCase());
-    if (existing) return res.status(400).json({ error: "Email already taken" });
-    u.email = email;
+  if (name) user.name = name;
+  if (email && email.toLowerCase() !== user.email.toLowerCase()) {
+    const existing = (db.data.users || []).find(u => u.email.toLowerCase() === email.toLowerCase() && u.id !== user.id);
+    if (existing) return res.status(400).json({ error: "Email is already in use by another account" });
+    user.email = email.toLowerCase();
   }
 
-  if (name) u.name = name;
-
-  if (new_password && new_password.trim().length > 0) {
-    if (!current_password || !bcrypt.compareSync(current_password, u.password)) {
-      return res.status(400).json({ error: "Current password is incorrect" });
-    }
-    u.password = bcrypt.hashSync(new_password.trim(), 10);
+  if (new_password) {
+    if (!current_password) return res.status(400).json({ error: "Current password is required to set a new password" });
+    const isMatch = bcrypt.compareSync(current_password, user.password);
+    if (!isMatch) return res.status(400).json({ error: "Current password is incorrect" });
+    user.password = bcrypt.hashSync(new_password, 10);
   }
 
-  db.save();
-  res.json({
-    message: "Profile updated successfully",
-    user: { id: u.id, name: u.name, email: u.email, role: u.role }
-  });
+  await db.save();
+  const { password: _, ...userWithoutPass } = user;
+  res.json({ message: "Profile updated successfully", user: userWithoutPass });
 });
 
-// Deactivate user (Admin only)
-router.delete("/:id", requireRole("admin"), (req, res) => {
-  const uId = parseInt(req.params.id);
-  if (uId === req.user.id) {
+router.put("/:id", requireRole("admin"), async (req, res) => {
+  const { name, email, role, is_active } = req.body;
+  const targetId = parseInt(req.params.id);
+  const user = (db.data.users || []).find(u => u.id === targetId);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  if (targetId === req.user.id && is_active === 0) {
     return res.status(400).json({ error: "You cannot deactivate your own account" });
   }
-  const u = db.data.users.find(x => x.id === uId);
-  if (!u) return res.status(404).json({ error: "User not found" });
 
-  u.is_active = 0;
-  db.save();
-  res.json({ message: `User ${u.name} deactivated` });
+  if (name) user.name = name;
+  if (email && email.toLowerCase() !== user.email.toLowerCase()) {
+    const existing = (db.data.users || []).find(u => u.email.toLowerCase() === email.toLowerCase() && u.id !== user.id);
+    if (existing) return res.status(400).json({ error: "Email is already in use by another account" });
+    user.email = email.toLowerCase();
+  }
+  if (role) user.role = role;
+  if (is_active !== undefined) user.is_active = is_active ? 1 : 0;
+
+  await db.save();
+  const { password: _, ...userWithoutPass } = user;
+  res.json({ message: "User updated successfully", user: userWithoutPass });
+});
+
+router.put("/:id/password", requireRole("admin"), async (req, res) => {
+  const { new_password } = req.body;
+  if (!new_password || new_password.length < 4) {
+    return res.status(400).json({ error: "Password must be at least 4 characters long" });
+  }
+
+  const targetId = parseInt(req.params.id);
+  const user = (db.data.users || []).find(u => u.id === targetId);
+  if (!user) return res.status(404).json({ error: "User not found" });
+
+  user.password = bcrypt.hashSync(new_password, 10);
+  await db.save();
+  res.json({ message: `Password for ${user.name} was successfully reset` });
 });
 
 module.exports = router;

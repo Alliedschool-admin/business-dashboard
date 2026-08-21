@@ -104,21 +104,31 @@ const MongoStore = mongoose.models.BizflowStore || mongoose.model("BizflowStore"
 class BizflowDB {
   constructor() {
     this.mongoConnected = false;
-    this.initMongo();
+    this.lastError = null;
     this.data = this.loadLocal();
+    this.isLoaded = false;
   }
 
-  async initMongo() {
+  async ensureConnected() {
     const uri = process.env.MONGODB_URI;
-    if (!uri) return;
+    if (!uri) {
+      this.mongoConnected = false;
+      this.lastError = "MONGODB_URI environment variable is not defined in Vercel settings.";
+      return;
+    }
+
     try {
-      if (mongoose.connection.readyState === 0) {
-        await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
+      if (mongoose.connection.readyState !== 1) {
+        await mongoose.connect(uri, {
+          serverSelectionTimeoutMS: 5000,
+          connectTimeoutMS: 5000,
+          bufferCommands: false
+        });
       }
       this.mongoConnected = true;
-      console.log("☁️ Connected permanently to MongoDB Atlas Cloud Database!");
+      this.lastError = null;
 
-      // Sync cloud data into memory
+      // Always fetch latest data snapshot from MongoDB
       const record = await MongoStore.findOne({ key: "bizflow_primary_data" });
       if (record && record.data) {
         this.data = record.data;
@@ -126,7 +136,10 @@ class BizflowDB {
       } else {
         await MongoStore.create({ key: "bizflow_primary_data", data: this.data });
       }
+      this.isLoaded = true;
     } catch (err) {
+      this.mongoConnected = false;
+      this.lastError = err.message;
       console.warn("⚠️ MongoDB connection notice:", err.message);
     }
   }
@@ -150,9 +163,9 @@ class BizflowDB {
     return def;
   }
 
-  save() {
+  async save() {
     this.saveLocal(this.data);
-    this.saveCloud();
+    await this.saveCloud();
   }
 
   saveLocal(d) {
@@ -162,18 +175,26 @@ class BizflowDB {
   }
 
   async saveCloud() {
-    if (!process.env.MONGODB_URI) return;
+    const uri = process.env.MONGODB_URI;
+    if (!uri) return;
     try {
-      if (mongoose.connection.readyState === 0) {
-        await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+      if (mongoose.connection.readyState !== 1) {
+        await mongoose.connect(uri, {
+          serverSelectionTimeoutMS: 5000,
+          connectTimeoutMS: 5000,
+          bufferCommands: false
+        });
       }
       await MongoStore.findOneAndUpdate(
         { key: "bizflow_primary_data" },
         { data: this.data, updatedAt: new Date() },
-        { upsert: true }
+        { upsert: true, new: true }
       );
+      this.mongoConnected = true;
+      this.lastError = null;
     } catch (e) {
-      console.warn("Cloud save notice:", e.message);
+      this.lastError = e.message;
+      console.warn("Cloud save error:", e.message);
     }
   }
 

@@ -3,6 +3,19 @@ const db = require("../db");
 const bcrypt = require("bcryptjs");
 const { authenticate, requireRole } = require("../auth");
 
+// DB Status check endpoint (Authenticated)
+router.get("/db-status", authenticate, async (req, res) => {
+  if (process.env.MONGODB_URI) {
+    await db.ensureConnected().catch(() => {});
+  }
+  res.json({
+    connected: db.mongoConnected,
+    has_env: !!process.env.MONGODB_URI,
+    error: db.lastError,
+    type: db.mongoConnected ? "MongoDB Atlas (Permanent Cloud)" : "Local/Memory (Temporary)"
+  });
+});
+
 router.use(authenticate);
 
 // Default settings if not already present
@@ -32,7 +45,7 @@ router.get("/", (req, res) => {
   res.json(getSettings());
 });
 
-router.put("/", requireRole("admin"), (req, res) => {
+router.put("/", requireRole("admin"), async (req, res) => {
   const current = getSettings();
   const {
     company_name,
@@ -67,13 +80,16 @@ router.put("/", requireRole("admin"), (req, res) => {
     footer_notes: footer_notes !== undefined ? footer_notes : current.footer_notes
   };
 
-  db.save();
+  await db.save();
   res.json({ message: "Company settings updated successfully", settings: db.data.settings });
 });
 
-// 1-Click Clear All Demo Data (Keeps Admin logged in)
-router.post("/clear-data", requireRole("admin"), (req, res) => {
-  // Keep admin user
+// 1-Click Clear All Demo Data (Keeps Admin logged in and writes to MongoDB)
+router.post("/clear-data", requireRole("admin"), async (req, res) => {
+  // Ensure DB connected before clearing
+  await db.ensureConnected().catch(() => {});
+
+  // Keep current admin user
   const adminUser = db.data.users.find(u => u.id === req.user.id) || {
     id: 1,
     name: req.user.name || "Admin User",
@@ -93,9 +109,10 @@ router.post("/clear-data", requireRole("admin"), (req, res) => {
   db.data.expenses = [];
   db.data.users = [adminUser];
 
-  db.save();
+  await db.save();
   res.json({
-    message: "All demo data cleared successfully! Your database is now completely clean and ready for real records."
+    message: "All demo data cleared successfully! Your database is now completely clean and ready for real records.",
+    cloud_saved: db.mongoConnected
   });
 });
 

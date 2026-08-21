@@ -1,14 +1,14 @@
-﻿const router = require("express").Router();
+const router = require("express").Router();
 const db = require("../db");
 const { authenticate, requireRole } = require("../auth");
 
 router.use(authenticate);
 
 router.get("/", (req, res) => {
-  const list = db.data.clients
+  const list = (db.data.clients || [])
     .filter(c => c.is_active === 1)
     .map(c => {
-      const u = db.data.users.find(x => x.id === c.created_by);
+      const u = (db.data.users || []).find(x => x.id === c.created_by);
       return { ...c, created_by_name: u ? u.name : "System" };
     })
     .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
@@ -16,12 +16,12 @@ router.get("/", (req, res) => {
 });
 
 router.get("/:id", (req, res) => {
-  const c = db.data.clients.find(x => x.id === parseInt(req.params.id));
+  const c = (db.data.clients || []).find(x => x.id === parseInt(req.params.id));
   if (!c) return res.status(404).json({ error: "Client not found" });
   res.json(c);
 });
 
-router.post("/", (req, res) => {
+router.post("/", async (req, res) => {
   const { name, email, phone, company, address, city, country, tax_number, payment_terms, notes } = req.body;
   if (!name) return res.status(400).json({ error: "Client name is required" });
   const newClient = {
@@ -40,13 +40,14 @@ router.post("/", (req, res) => {
     created_by: req.user.id,
     created_at: new Date().toISOString().replace("T", " ").slice(0, 19)
   };
+  if (!db.data.clients) db.data.clients = [];
   db.data.clients.push(newClient);
-  db.save();
+  await db.save();
   res.json({ id: newClient.id, message: "Client created" });
 });
 
-router.put("/:id", (req, res) => {
-  const c = db.data.clients.find(x => x.id === parseInt(req.params.id));
+router.put("/:id", async (req, res) => {
+  const c = (db.data.clients || []).find(x => x.id === parseInt(req.params.id));
   if (!c) return res.status(404).json({ error: "Client not found" });
   const { name, email, phone, company, address, city, country, tax_number, payment_terms, notes } = req.body;
   c.name = name || c.name;
@@ -59,15 +60,15 @@ router.put("/:id", (req, res) => {
   c.tax_number = tax_number !== undefined ? tax_number : c.tax_number;
   c.payment_terms = payment_terms !== undefined ? parseInt(payment_terms) : c.payment_terms;
   c.notes = notes !== undefined ? notes : c.notes;
-  db.save();
+  await db.save();
   res.json({ message: "Client updated" });
 });
 
-router.delete("/:id", requireRole("admin", "manager"), (req, res) => {
-  const c = db.data.clients.find(x => x.id === parseInt(req.params.id));
+router.delete("/:id", requireRole("admin", "manager"), async (req, res) => {
+  const c = (db.data.clients || []).find(x => x.id === parseInt(req.params.id));
   if (!c) return res.status(404).json({ error: "Client not found" });
   c.is_active = 0;
-  db.save();
+  await db.save();
   res.json({ message: "Client deleted" });
 });
 
