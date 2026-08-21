@@ -20,6 +20,7 @@ app.use("/api/invoices", require("./routes/invoices"));
 app.use("/api/expenses", require("./routes/expenses"));
 app.use("/api/users", require("./routes/users"));
 app.use("/api/dashboard", require("./routes/dashboard"));
+app.use("/api/settings", require("./routes/settings"));
 
 app.get("/api/health", (req, res) => res.json({ status: "ok", time: new Date() }));
 

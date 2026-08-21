@@ -14,7 +14,8 @@ import {
   Building2,
   ChevronRight,
   Wallet,
-  Settings,
+  Settings as SettingsIcon,
+  Sliders,
   Key,
   X,
   Eye,
@@ -29,7 +30,8 @@ const navItems = [
   { to: "/quotations", icon: FileText, label: "Quotations" },
   { to: "/invoices", icon: Receipt, label: "Invoices" },
   { to: "/expenses", icon: CreditCard, label: "Expenses" },
-  { to: "/users", icon: Users, label: "User Management", roles: ["admin"] }
+  { to: "/users", icon: Users, label: "User Management", roles: ["admin"] },
+  { to: "/settings", icon: Sliders, label: "Company Settings", roles: ["admin"] }
 ];
 
 const roleColors = {
@@ -136,7 +138,7 @@ export default function Sidebar({ mobile, onClose }) {
               </p>
               <span className={clsx("badge text-[10px] mt-0.5", roleColors[user?.role])}>{user?.role}</span>
             </div>
-            <Settings className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
+            <SettingsIcon className="w-4 h-4 text-slate-400 group-hover:text-white transition-colors" />
           </div>
 
           <div className="grid grid-cols-2 gap-2">

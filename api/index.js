@@ -14,6 +14,7 @@ app.use("/api/invoices", require("../server/routes/invoices"));
 app.use("/api/expenses", require("../server/routes/expenses"));
 app.use("/api/users", require("../server/routes/users"));
 app.use("/api/dashboard", require("../server/routes/dashboard"));
+app.use("/api/settings", require("../server/routes/settings"));
 
 app.get("/api/health", (req, res) => res.json({ status: "ok", time: new Date() }));
 
