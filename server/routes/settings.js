@@ -1,5 +1,6 @@
 const router = require("express").Router();
 const db = require("../db");
+const bcrypt = require("bcryptjs");
 const { authenticate, requireRole } = require("../auth");
 
 router.use(authenticate);
@@ -68,6 +69,34 @@ router.put("/", requireRole("admin"), (req, res) => {
 
   db.save();
   res.json({ message: "Company settings updated successfully", settings: db.data.settings });
+});
+
+// 1-Click Clear All Demo Data (Keeps Admin logged in)
+router.post("/clear-data", requireRole("admin"), (req, res) => {
+  // Keep admin user
+  const adminUser = db.data.users.find(u => u.id === req.user.id) || {
+    id: 1,
+    name: req.user.name || "Admin User",
+    email: req.user.email || "admin@bizflow.com",
+    password: bcrypt.hashSync("admin123", 10),
+    role: "admin",
+    is_active: 1,
+    created_at: new Date().toISOString()
+  };
+
+  db.data.clients = [];
+  db.data.products = [];
+  db.data.quotations = [];
+  db.data.quotation_items = [];
+  db.data.invoices = [];
+  db.data.invoice_items = [];
+  db.data.expenses = [];
+  db.data.users = [adminUser];
+
+  db.save();
+  res.json({
+    message: "All demo data cleared successfully! Your database is now completely clean and ready for real records."
+  });
 });
 
 module.exports = router;

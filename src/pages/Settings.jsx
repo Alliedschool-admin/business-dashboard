@@ -15,7 +15,9 @@ import {
   Trash2,
   Sparkles,
   CheckCircle,
-  Eye
+  AlertTriangle,
+  RefreshCw,
+  Database
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 
@@ -37,6 +39,7 @@ export default function Settings() {
     footer_notes: ""
   });
   const [loading, setLoading] = useState(false);
+  const [clearingData, setClearingData] = useState(false);
   const [fetching, setFetching] = useState(true);
   const [uploadMode, setUploadMode] = useState("url"); // "url" | "upload"
 
@@ -75,6 +78,26 @@ export default function Settings() {
       toast.error(err.response?.data?.error || "Failed to save settings");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleClearDemoData = async () => {
+    const confirmed = window.confirm(
+      "⚠️ ARE YOU SURE?\n\nThis will permanently delete all demo Clients, Products, Quotations, Invoices, and Expenses so you can start with a fresh database for real business data.\n\nYour Admin account and login will be kept intact."
+    );
+    if (!confirmed) return;
+
+    setClearingData(true);
+    try {
+      const { data } = await axios.post("/api/settings/clear-data");
+      toast.success(data.message || "Demo data cleared successfully!", { duration: 5000 });
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 1500);
+    } catch (err) {
+      toast.error(err.response?.data?.error || "Failed to clear demo data");
+    } finally {
+      setClearingData(false);
     }
   };
 
@@ -387,6 +410,48 @@ export default function Settings() {
           </button>
         </div>
       </form>
+
+      {/* 1-Click Clear Demo Data Card */}
+      {user?.role === "admin" && (
+        <div className="card p-6 md:p-8 border-red-200/80 bg-gradient-to-b from-white to-red-50/20">
+          <div className="flex items-center gap-3 mb-4 pb-3 border-b border-red-100">
+            <div className="w-10 h-10 rounded-xl bg-red-100 text-red-700 flex items-center justify-center shadow-sm">
+              <Database className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-red-900">Database & Demo Data Management</h2>
+              <p className="text-xs text-slate-500">Clear sample records to begin entering your real business data</p>
+            </div>
+          </div>
+
+          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="text-sm text-slate-600 max-w-xl">
+              <p className="font-semibold text-slate-800 mb-1 flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-amber-500 inline" /> Ready to use this for your real business?
+              </p>
+              <p className="text-xs text-slate-500">
+                Clicking this button will wipe all sample clients, products, quotations, invoices, and expenses. Your
+                current Admin login credentials and company settings will be preserved.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleClearDemoData}
+              disabled={clearingData}
+              className="btn-danger px-6 py-2.5 whitespace-nowrap shadow-md"
+            >
+              {clearingData ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4" /> Clear All Demo Data (Start Fresh)
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
