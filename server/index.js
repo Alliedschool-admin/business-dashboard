@@ -1,4 +1,4 @@
-﻿const express = require("express");
+const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
@@ -35,3 +35,5 @@ if (fs.existsSync(distPath)) {
 app.listen(PORT, () => {
   console.log(`🚀 BizFlow Server running on http://localhost:${PORT}`);
 });
+
+module.exports = app;
