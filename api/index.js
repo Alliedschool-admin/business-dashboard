@@ -1,9 +1,18 @@
 const express = require("express");
 const cors = require("cors");
+const db = require("../server/db");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// Sync Cloud Database middleware on serverless
+app.use(async (req, res, next) => {
+  if (process.env.MONGODB_URI && !db.mongoConnected) {
+    await db.initMongo().catch(() => {});
+  }
+  next();
+});
 
 // API Routes
 app.use("/api/auth", require("../server/routes/auth"));
@@ -16,6 +25,12 @@ app.use("/api/users", require("../server/routes/users"));
 app.use("/api/dashboard", require("../server/routes/dashboard"));
 app.use("/api/settings", require("../server/routes/settings"));
 
-app.get("/api/health", (req, res) => res.json({ status: "ok", time: new Date() }));
+app.get("/api/health", (req, res) =>
+  res.json({
+    status: "ok",
+    cloud_database: db.mongoConnected ? "Connected (MongoDB Atlas)" : "Local/Memory Storage",
+    time: new Date()
+  })
+);
 
 module.exports = app;

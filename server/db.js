@@ -1,8 +1,8 @@
 const fs = require("fs");
 const path = require("path");
 const bcrypt = require("bcryptjs");
+const mongoose = require("mongoose");
 
-// In serverless environments (e.g. Vercel), /tmp is the writable directory
 const DB_FILE = process.env.VERCEL
   ? path.join("/tmp", "bizflow_data.json")
   : path.join(__dirname, "bizflow_data.json");
@@ -73,48 +73,107 @@ function getDefaultData() {
     { id: 5, title: "Ergonomic Office Chairs & Monitors", amount: 890.00, category: "Equipment", date: "2026-08-14", description: "Equipment upgrade for workstations", status: "pending", receipt_notes: "Office Depot order #99214", created_by: 3, approved_by: null, approved_at: null, created_at: "2026-08-14 13:10:00" },
   ];
 
-  return { users, clients, products, quotations, quotation_items, invoices, invoice_items, expenses };
+  const settings = {
+    company_name: "BizFlow Technologies Inc.",
+    logo_url: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80",
+    email: "billing@bizflow.com",
+    phone: "+1 (555) 019-2834",
+    address: "100 Innovation Way, Suite 500",
+    city: "San Francisco",
+    country: "USA",
+    tax_number: "US-987654321",
+    currency_symbol: "$",
+    default_tax_rate: 10,
+    invoice_prefix: "INV-",
+    quotation_prefix: "QUO-",
+    footer_notes: "Thank you for doing business with us! Payment is due according to standard terms."
+  };
+
+  return { users, clients, products, quotations, quotation_items, invoices, invoice_items, expenses, settings };
 }
+
+// MongoDB Model definition for permanent cloud storage
+const MongoStoreSchema = new mongoose.Schema({
+  key: { type: String, default: "bizflow_primary_data", unique: true },
+  data: { type: Object, required: true },
+  updatedAt: { type: Date, default: Date.now }
+});
+
+const MongoStore = mongoose.models.BizflowStore || mongoose.model("BizflowStore", MongoStoreSchema);
 
 class BizflowDB {
   constructor() {
-    this.data = this.load();
+    this.mongoConnected = false;
+    this.initMongo();
+    this.data = this.loadLocal();
   }
 
-  load() {
+  async initMongo() {
+    const uri = process.env.MONGODB_URI;
+    if (!uri) return;
+    try {
+      if (mongoose.connection.readyState === 0) {
+        await mongoose.connect(uri, { serverSelectionTimeoutMS: 5000 });
+      }
+      this.mongoConnected = true;
+      console.log("☁️ Connected permanently to MongoDB Atlas Cloud Database!");
+
+      // Sync cloud data into memory
+      const record = await MongoStore.findOne({ key: "bizflow_primary_data" });
+      if (record && record.data) {
+        this.data = record.data;
+        this.saveLocal(this.data);
+      } else {
+        await MongoStore.create({ key: "bizflow_primary_data", data: this.data });
+      }
+    } catch (err) {
+      console.warn("⚠️ MongoDB connection notice:", err.message);
+    }
+  }
+
+  loadLocal() {
     if (fs.existsSync(DB_FILE)) {
       try {
         const raw = fs.readFileSync(DB_FILE, "utf-8");
         return JSON.parse(raw);
-      } catch (e) {
-        console.error("Error reading db file, using defaults:", e);
-      }
+      } catch (e) {}
     }
-    // Also check local bundled data if on serverless
     const bundledPath = path.join(__dirname, "bizflow_data.json");
     if (fs.existsSync(bundledPath)) {
       try {
         const raw = fs.readFileSync(bundledPath, "utf-8");
-        const parsed = JSON.parse(raw);
-        this.saveData(parsed);
-        return parsed;
+        return JSON.parse(raw);
       } catch (e) {}
     }
-
     const def = getDefaultData();
-    this.saveData(def);
+    this.saveLocal(def);
     return def;
   }
 
   save() {
-    this.saveData(this.data);
+    this.saveLocal(this.data);
+    this.saveCloud();
   }
 
-  saveData(d) {
+  saveLocal(d) {
     try {
       fs.writeFileSync(DB_FILE, JSON.stringify(d, null, 2), "utf-8");
+    } catch (e) {}
+  }
+
+  async saveCloud() {
+    if (!process.env.MONGODB_URI) return;
+    try {
+      if (mongoose.connection.readyState === 0) {
+        await mongoose.connect(process.env.MONGODB_URI, { serverSelectionTimeoutMS: 5000 });
+      }
+      await MongoStore.findOneAndUpdate(
+        { key: "bizflow_primary_data" },
+        { data: this.data, updatedAt: new Date() },
+        { upsert: true }
+      );
     } catch (e) {
-      console.warn("Notice: File save ignored in read-only environment, keeping in memory.");
+      console.warn("Cloud save notice:", e.message);
     }
   }
 
@@ -126,5 +185,5 @@ class BizflowDB {
 }
 
 const db = new BizflowDB();
-console.log("✅ BizFlow Database loaded & ready");
+console.log("✅ BizFlow Database Engine Ready (Dual Local + Cloud Sync)");
 module.exports = db;
